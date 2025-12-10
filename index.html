@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WEB広告レポート分析・改善施策提案ツール Ver 7.7</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (for JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- File Parsing Libraries -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563eb',
+                        secondary: '#475569',
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-out forwards',
+                        'spin-slow': 'spin 3s linear infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; }
+        
+        /* テキストエリアのスクロールバー */
+        textarea::-webkit-scrollbar { width: 8px; }
+        textarea::-webkit-scrollbar-track { background: #f1f5f9; }
+        textarea::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+        textarea:focus { outline: none; border-color: #3b82f6; ring: 2px solid #3b82f6; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // ==========================================
+        //  CONFIG: GCP Cloud Function Endpoint
+        // ==========================================
+        const GCP_API_ENDPOINT = "https://proxy-gemini-369747635095.asia-northeast1.run.app"; 
+
+        // ==========================================
+        //  CONFIG: Supabase Settings
+        //  (From index2.html)
+        // ==========================================
+        const SUPABASE_URL = 'https://zflsgqzuvcnahxmthjpk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmbHNncXp1dmNuYWh4bXRoanBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1MTE1NzMsImV4cCI6MjA2NzA4NzU3M30.P1dLtsIorP7PoKkL97UCJ3UmIm_OQFu0NPJNmCOZV1I';
+
+        // Initialize Supabase
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // --- 1. Icons ---
+        const Icons = {
+            Upload: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
+            FileText: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>,
+            Settings: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+            Sparkles: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M3 5h4"/><path d="M3 9h4"/></svg>,
+            ChevronDown: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>,
+            Download: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
+            Trash2: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>,
+            Play: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
+            PieChart: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>,
+            BarChart: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>,
+            BarChart2: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>,
+            TrendingUp: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
+            Clock: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+            Layers: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
+            Image: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>,
+            Search: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>,
+            Users: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+            Smartphone: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>,
+            RefreshCw: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>,
+            Table: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"/><path d="M3 12h18"/><rect width="18" height="18" x="3" y="3" rx="2"/></svg>,
+            ArrowLeftRight: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>,
+            CalendarDays: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>,
+            MapPin: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>,
+            LogOut: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
+            Lock: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        };
+
+        // --- 2. File Parser Utility ---
+        class FileParser {
+            static async init() {
+                if (window.pdfjsLib) {
+                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                }
+            }
+
+            static async parse(file) {
+                try {
+                    if (file.name.endsWith('.csv')) return await this.parseCSV(file);
+                    if (file.name.match(/\.xls(x)?$/)) return await this.parseExcel(file);
+                    if (file.name.endsWith('.pdf')) return await this.parsePDF(file);
+                    return `[Skip] Unsupported file format: ${file.name}`;
+                } catch (e) {
+                    console.error("Parse Error:", e);
+                    return `[Error] Failed to parse ${file.name}: ${e.message}`;
+                }
+            }
+
+            static async parseCSV(file) {
+                const text = await file.text();
+                // 読み込み行数を増加
+                const lines = text.split('\n').slice(0, 3000).join('\n'); 
+                return `\n\n=== CSV FILE: ${file.name} ===\n${lines}`; 
+            }
+
+            static async parseExcel(file) {
+                if (!window.XLSX) return "[Error] Excel parser not loaded.";
+                const data = await file.arrayBuffer();
+                const workbook = window.XLSX.read(data, { type: 'array' });
+                let text = `\n\n=== EXCEL FILE: ${file.name} ===\n`;
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const csv = window.XLSX.utils.sheet_to_csv(sheet);
+                    // 文字数制限を緩和
+                    if (csv.length > 50) {
+                        text += `\n--- Sheet: ${sheetName} ---\n${csv.slice(0, 50000)}\n`; 
+                    }
+                });
+                return text;
+            }
+
+            static async parsePDF(file) {
+                if (!window.pdfjsLib) return "[Error] PDF parser not loaded.";
+                const data = await file.arrayBuffer();
+                const pdf = await window.pdfjsLib.getDocument({ data }).promise;
+                let text = `\n\n=== PDF FILE: ${file.name} ===\n`;
+                // ページ数制限を緩和
+                const maxPages = Math.min(pdf.numPages, 30);
+                for (let i = 1; i <= maxPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    const strings = content.items.map(item => item.str);
+                    text += `\n--- Page ${i} ---\n${strings.join(' ')}\n`;
+                }
+                return text;
+            }
+        }
+
+        // --- 3. Analysis Configurations ---
+        const ANALYSIS_SECTIONS = [
+            { id: 'summary', title: '全体サマリー', icon: 'BarChart2', description: '広告全体の分析・CV/KPIなどWEBプロモーションの目標数値達成状況について' },
+            { id: 'comparisonMoM', title: '【比較】期間比較・トレンド分析', icon: 'ArrowLeftRight', description: '任意の複数ファイルの比較（前月比、過去比など）、トレンド変化の分析' },
+            { id: 'comparisonYoY', title: '【比較】前年同月比分析', icon: 'CalendarDays', description: '昨対比、季節要因の分析' },
+            { id: 'timeSeries', title: '時系列・推移分析', icon: 'TrendingUp', description: '日次予算消化ペースを基に分析' },
+            { id: 'dayTime', title: '曜日・時間帯分析', icon: 'Clock', description: '獲得集中時間、機会損失の可能性などを分析' },
+            { id: 'campaigns', title: 'キャンペーン分析', icon: 'Layers', description: '好調/不調キャンペーンの要因特定と予算配分について' },
+            { id: 'creatives', title: 'クリエイティブ分析', icon: 'Image', description: '反応率の高いクリエイティブの法則性、CTRなどの分析' },
+            { id: 'keywords', title: 'キーワード分析', icon: 'Search', description: '検索意図の分析、除外/拡張キーワード提案' },
+            { id: 'attributes', title: 'ユーザー属性分析', icon: 'Users', description: '性別・年齢・地域ごとの広告効率についての分析' },
+            { id: 'devices', title: 'デバイス分析', icon: 'Smartphone', description: 'デバイス毎の効果検証、改善提案' },
+        ];
+
+        // --- 4. Login Component ---
+        function Login({ onLoginSuccess }) {
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            const [isSignUp, setIsSignUp] = React.useState(false);
+            const [loading, setLoading] = React.useState(false);
+            const [message, setMessage] = React.useState({ text: '', type: '' });
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setMessage({ text: '', type: '' });
+
+                try {
+                    if (isSignUp) {
+                        const { error } = await supabaseClient.auth.signUp({
+                            email,
+                            password,
+                            options: {
+                                emailRedirectTo: `${window.location.origin}/auth-verify.html`
+                            }
+                        });
+                        if (error) throw error;
+                        setMessage({ text: '確認メールを送信しました。メール内のリンクをクリックしてください。', type: 'success' });
+                    } else {
+                        const { error } = await supabaseClient.auth.signInWithPassword({
+                            email,
+                            password
+                        });
+                        if (error) throw error;
+                        // onAuthStateChange will handle the redirection/state update
+                    }
+                } catch (error) {
+                    setMessage({ text: error.message, type: 'error' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <div className="bg-blue-100 p-3 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                                <Icons.Lock className="w-8 h-8 text-blue-600" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-slate-800">
+                                {isSignUp ? 'アカウント作成' : 'レポート分析ツール'}
+                            </h2>
+                            <p className="text-slate-500 mt-2">
+                                {isSignUp ? '新しいアカウントを作成して開始します' : 'ログインして分析を開始してください'}
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleAuth} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">メールアドレス</label>
+                                <input 
+                                    type="email" 
+                                    required 
+                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">パスワード</label>
+                                <input 
+                                    type="password" 
+                                    required 
+                                    minLength="6"
+                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                            </div>
+
+                            {message.text && (
+                                <div className={`p-3 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                    {message.text}
+                                </div>
+                            )}
+
+                            <button 
+                                type="submit" 
+                                disabled={loading}
+                                className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                                {isSignUp ? '登録する' : 'ログイン'}
+                            </button>
+                        </form>
+
+                        <div className="mt-6 text-center">
+                            <button 
+                                onClick={() => { setIsSignUp(!isSignUp); setMessage({ text: '', type: '' }); }}
+                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                {isSignUp ? 'すでにアカウントをお持ちの方はこちら' : 'アカウントをお持ちでない方はこちら'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- 5. Main App Component ---
+        function App() {
+            // Auth State
+            const [user, setUser] = React.useState(null);
+            const [authLoading, setAuthLoading] = React.useState(true);
+
+            // Tool State
+            const [files, setFiles] = React.useState([]); 
+            const [fileContents, setFileContents] = React.useState({}); 
+            const [mode, setMode] = React.useState('pachinko'); 
+            const [inputs, setInputs] = React.useState({
+                period: '',
+                goal: '',
+                target: '',
+                strength: '',
+                competitor: '',
+                issues: '',
+                notes: '',
+                geoData: '', 
+                roasRoi: ''  
+            });
+            const [isInputExpanded, setIsInputExpanded] = React.useState(false);
+            const [modelName, setModelName] = React.useState('gemini-2.5-flash');
+            const [showSettings, setShowSettings] = React.useState(false);
+            const [results, setResults] = React.useState({});
+            const [loadingStates, setLoadingStates] = React.useState({}); 
+            const [expandedSections, setExpandedSections] = React.useState({ summary: true }); 
+
+            // Auth Check Effect
+            React.useEffect(() => {
+                const checkUser = async () => {
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    setUser(session?.user || null);
+                    setAuthLoading(false);
+                };
+                checkUser();
+
+                const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+                    setUser(session?.user || null);
+                });
+
+                return () => subscription.unsubscribe();
+            }, []);
+
+            // Init
+            React.useEffect(() => {
+                FileParser.init();
+                const storedModel = localStorage.getItem('gemini_model');
+                if (storedModel) setModelName(storedModel);
+            }, []);
+
+            // Handlers
+            const handleLogout = async () => {
+                await supabaseClient.auth.signOut();
+            };
+
+            const saveSettings = () => {
+                localStorage.setItem('gemini_model', modelName);
+                setShowSettings(false);
+            };
+
+            const handleDrop = async (e) => {
+                e.preventDefault();
+                const droppedFiles = Array.from(e.dataTransfer.files);
+                for (const file of droppedFiles) {
+                    try {
+                        const content = await FileParser.parse(file);
+                        setFileContents(prev => ({...prev, [file.name]: content}));
+                    } catch (error) {
+                        console.error(`Error parsing ${file.name}:`, error);
+                    }
+                }
+                setFiles(prev => [...prev, ...droppedFiles]);
+            };
+            
+            const handleFileSelect = async (e) => {
+                const selectedFiles = Array.from(e.target.files);
+                for (const file of selectedFiles) {
+                    try {
+                        const content = await FileParser.parse(file);
+                        setFileContents(prev => ({...prev, [file.name]: content}));
+                    } catch (error) {
+                        console.error(`Error parsing ${file.name}:`, error);
+                    }
+                }
+                setFiles(prev => [...prev, ...selectedFiles]);
+            };
+
+            const removeFile = (idx) => {
+                setFiles(prev => prev.filter((_, i) => i !== idx));
+            };
+
+            const toggleSection = (id) => {
+                setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
+            };
+
+            const updateResult = (id, text) => {
+                setResults(prev => ({ ...prev, [id]: text }));
+            };
+
+            const handleInputChange = (field, value) => {
+                setInputs(prev => ({ ...prev, [field]: value }));
+            };
+
+            const runAnalysis = async (sectionId) => {
+                if (files.length === 0) { alert('ファイルをアップロードしてください。'); return; }
+                
+                if (GCP_API_ENDPOINT.includes("YOUR_GCP")) {
+                    alert('GCPのURLが設定されていません。HTMLファイル内の GCP_API_ENDPOINT を書き換えてください。');
+                    return;
+                }
+
+                setLoadingStates(prev => ({ ...prev, [sectionId]: true }));
+                
+                try {
+                    let rawData = "";
+                    files.forEach(file => {
+                        const content = fileContents[file.name];
+                        if (content) rawData += content;
+                    });
+
+                    if (!rawData) throw new Error("ファイルの内容を読み取れませんでした。ファイルを再アップロードしてください。");
+
+                    // Build Prompts (Same logic as Ver 7.5)
+                    let systemPrompt = "";
+                    if (mode === 'general_cv') {
+                        systemPrompt = `あなたはWEB広告運用のプロフェッショナルコンサルタントです。\nクライアントの売上拡大・利益最大化を目的とし、数値に基づいた論理的な分析を行ってください。\n【評価基準】: CPA（獲得単価）、ROAS（広告費用対効果）、CVR（コンバージョン率）、CV（コンバージョン）を最重要指標とします。\n【トーン＆マナー】: \n- クライアントへの「公式な分析レポート」として適切な、丁寧かつ論理的な「です・ます調」を使用してください。\n- メールのような挨拶（拝啓、お世話になっております等）は一切禁止です。\n- 感情的な表現は避け、数値と事実に基づいたプロフェッショナルな文体を維持してください。`;
+                    } else if (mode === 'general_branding') {
+                        systemPrompt = `あなたはWEB広告運用のプロフェッショナルコンサルタントです。\nクライアントの認知拡大・ブランドリフトを目的とし、リーチと誘導効率を分析してください。\n【評価基準】: CTR（クリック率）、CPC（クリック単価）、インプレッション数、CPMを重要指標とします。CVは参考程度とします。\n【トーン＆マナー】: \n- クライアントへの「公式な分析レポート」として適切な、丁寧かつ論理的な「です・ます調」を使用してください。\n- メールのような挨拶（拝啓、お世話になっております等）は一切禁止です。\n- ポジティブな要素を見つけ出し、さらなる拡大策を提案するスタイルで記述してください。`;
+                    } else if (mode === 'pachinko') {
+                        systemPrompt = `あなたはパチンコホール集客の専門WEBマーケターです。\n店舗の「稼働率向上」「来店客数増加」を目的とした分析を行ってください。 CTR（クリック率）、CPC（クリック単価）、インプレッション数、CPMについても可能な限り分析し、改善策を提案してください。\n【重要・用語制限】: \n- 「CV（コンバージョン）」という言葉は絶対に使用せず、「来店」「稼働」「アクション」「客数」などに言い換えてください。\n- 「CPA」は「来店獲得単価」や「アクション単価」と言い換えてください。\n【評価基準】: エリア商圏内の競合との比較、新台入替やイベント日（特定日）の反響を重視してください。\n【トーン＆マナー】: \n- クライアントへの「公式な分析レポート」として適切な、丁寧かつ論理的な「です・ます調」を使用してください。\n- メールのような挨拶（拝啓、お世話になっております等）は一切禁止です。\n- 現場の店長にも伝わる、分かりやすく熱意のある表現を心がけてください。`;
+                    }
+
+                    const userContext = `
+【最重要：分析の前提データ（データ修正・上書き指示）】
+以下の「詳細入力オプション」に記載された情報は、アップロードされたレポートファイルの数値よりも**優先度が高い**情報です。
+特に「その他特記事項」や「GEOデータ」、「ROAS/ROI目標」に具体的な数値が記述されている場合は、
+**レポートファイルの数値を無視し、入力された数値を「正」として分析を行ってください。**
+
+1. 分析対象期間: ${inputs.period || "レポートデータの日付に従う"}
+2. プロモーションのゴール: ${inputs.goal || "特になし"}
+3.ターゲット層: ${inputs.target || "特になし"}
+4. 訴求ポイント・強み: ${inputs.strength || "特になし"}
+5. 競合・市場状況: ${inputs.competitor || "特になし"}
+6. 現状の課題感: ${inputs.issues || "特になし"}
+7. その他特記事項: ${inputs.notes || "特になし"}
+8. GEO広告・来店計測データ: ${inputs.geoData || "特になし（※ファイル内に来店データがある場合はそちらを優先して分析してください）"}
+9. ROAS/ROI目標・実績: ${inputs.roasRoi || "特になし（※入力がある場合は、この目標値に対する達成度を最優先で評価してください）"}
+`;
+
+                    const sectionConfig = ANALYSIS_SECTIONS.find(s => s.id === sectionId);
+                    
+                    let specificInstruction = "";
+                    if (sectionId === 'comparisonMoM') {
+                        specificInstruction = `【重要：期間比較・トレンド分析モード】\n複数の期間ファイルがある場合、最新を当月、それ以外を過去として比較してください。\n「なぜ変化したのか（要因仮説）」と「どう対策すべきか（アクション）」を深く分析してください。`;
+                    } else if (sectionId === 'comparisonYoY') {
+                        specificInstruction = `【重要：前年比較モード】\n前年データと比較し、市場環境の変化や季節要因を分析してください。`;
+                    } else {
+                        let baseInstruction = `【最重要：最新データ一点集中】\n本セクション「${sectionConfig.title}」では、**「最新の状況」のみ**を分析してください。過去との比較はノイズとなるため無視してください。`;
+                        if (sectionId === 'summary') {
+                            baseInstruction += `
+\n【重要：全体サマリーにおける深掘り分析の徹底】
+単に数値を羅列するだけの「浅いレポート」は禁止します。プロのコンサルタントとして、以下の視点で深く考察してください。
+1. **8大指標の網羅と評価**: Imp, Click, CTR, CPC, Cost, CV, CVR, CPA, ROASの数値を提示し、それぞれの良し悪しを判定してください。
+2. **ボトルネックの特定**: 「CPA悪化の主因はCPCの高騰ではなく、CVRの低下にある」といったように、課題の核心を特定してください。
+3. **KPI間の相関分析**: 「クリック率は高いがCVRが低い（＝LPに問題あり？）」など、指標間の関係性から仮説を導き出してください。
+4. **目標との乖離**: 詳細入力にROAS/ROI目標がある場合は、その達成可否と、未達ならその原因を最優先で論じてください。
+`;
+                        }
+                        if (sectionId !== 'summary') {
+                            baseInstruction += `\nもし入力データにROAS/ROIの目標値がある場合は、本セクションの分析においても、その目標達成に貢献しているかという視点を盛り込んでください。`;
+                        }
+                        specificInstruction = baseInstruction;
+                    }
+
+                    const prompt = `
+${systemPrompt}
+${userContext}
+【今回のミッション】
+あなたは今、**【${sectionConfig.title}】** の専任担当者です。
+渡されたレポートデータの中から、**【${sectionConfig.title}】** に関連する数値や情報「のみ」を抽出し、深い分析を行ってください。
+${specificInstruction}
+【最重要: 出力形式の厳守事項】
+1. Markdown記号禁止（**太字**や#見出しなどは使用しない）。
+2. 「。」で必ず改行。1段落は3行以内。
+3. 箇条書きのリスト間は空行を入れず詰める。
+4. 文体は「です・ます調」。挨拶不要。
+5. 構成：【現状分析】と【改善施策】の2部構成。
+
+【レポートデータ】
+${rawData}
+`;
+
+                    const response = await fetch(GCP_API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: prompt, modelName: modelName })
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(errData.error || `API Error: ${response.status}`);
+                    }
+
+                    const resultJson = await response.json();
+                    updateResult(sectionId, resultJson.text || "生成エラー");
+                    setExpandedSections(prev => ({ ...prev, [sectionId]: true })); 
+
+                } catch (e) {
+                    console.error(e);
+                    alert(`分析エラー (${sectionId}): ${e.message}`);
+                } finally {
+                    setLoadingStates(prev => ({ ...prev, [sectionId]: false }));
+                }
+            };
+
+            const downloadAllCSV = () => {
+                const BOM = '\uFEFF'; 
+                let csvContent = BOM + "セクション,分析内容\n";
+                // Inputs Context
+                csvContent += `"前提条件: 期間","${inputs.period}"\n"前提条件: ゴール","${inputs.goal}"\n"前提条件: ターゲット","${inputs.target}"\n"前提条件: 強み","${inputs.strength}"\n"前提条件: 競合","${inputs.competitor}"\n"前提条件: 課題","${inputs.issues}"\n"前提条件: 特記事項","${inputs.notes}"\n"前提条件: GEO来店データ","${inputs.geoData}"\n"前提条件: ROAS/ROI目標","${inputs.roasRoi}"\n`;
+                ANALYSIS_SECTIONS.forEach(section => {
+                    const content = results[section.id] || "（未生成）";
+                    const escapedContent = content.replace(/"/g, '""');
+                    csvContent += `"${section.title}","${escapedContent}"\n`;
+                });
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Report_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+            };
+
+            // Loading Screen
+            if (authLoading) {
+                return (
+                    <div className="flex h-screen items-center justify-center bg-slate-100">
+                        <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                    </div>
+                );
+            }
+
+            // Not Logged In -> Show Login
+            if (!user) {
+                return <Login onLoginSuccess={() => setAuthLoading(true)} />;
+            }
+
+            // Logged In -> Show Tool
+            return (
+                <div className="flex h-screen overflow-hidden bg-slate-50">
+                    {/* --- Sidebar --- */}
+                    <div className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-xl z-20 hidden md:flex flex-shrink-0">
+                        <div className="p-6 border-b border-slate-800">
+                            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Icons.PieChart className="w-8 h-8 text-blue-500" />
+                                <span>Ad Report AI</span>
+                            </h1>
+                            <p className="text-xs mt-2 text-slate-500 font-mono">Ver1.0</p>
+                        </div>
+                        <nav className="flex-1 p-4 overflow-y-auto">
+                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Analysis Menu</div>
+                            <ul className="space-y-1">
+                                {ANALYSIS_SECTIONS.map(section => (
+                                    <li key={section.id}>
+                                        <button 
+                                            onClick={() => {
+                                                const el = document.getElementById(`section-${section.id}`);
+                                                if(el) {
+                                                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                    setExpandedSections(prev => ({...prev, [section.id]: true}));
+                                                }
+                                            }}
+                                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${results[section.id] ? 'text-green-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-800'}`}
+                                        >
+                                            {results[section.id] && <span className="w-2 h-2 rounded-full bg-green-500"></span>}
+                                            {section.title}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </nav>
+                        <div className="p-4 border-t border-slate-800">
+                            <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 text-sm hover:text-white transition-colors">
+                                <Icons.Settings className="w-4 h-4" /> 設定・モデル変更
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* --- Main Content --- */}
+                    <main className="flex-1 flex flex-col relative overflow-hidden">
+                        <header className="bg-white border-b border-slate-200 p-4 flex justify-between items-center shadow-sm z-10">
+                            <div className="flex items-center gap-4">
+                                <h2 className="text-xl font-bold text-slate-800">レポート分析</h2>
+                                <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">Model: {modelName}</span>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={downloadAllCSV} disabled={Object.keys(results).length === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm">
+                                    <Icons.Download className="w-4 h-4" /> CSV一括ダウンロード
+                                </button>
+                                <button onClick={handleLogout} className="bg-slate-200 hover:bg-slate-300 text-slate-600 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 transition-colors">
+                                    <Icons.LogOut className="w-4 h-4" /> ログアウト
+                                </button>
+                            </div>
+                        </header>
+
+                        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scroll-smooth">
+                            
+                            {/* 1. Input Area */}
+                            <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-sm">1</span>
+                                    データ入力 & 設定
+                                </h3>
+                                
+                                <div className="grid grid-cols-1 gap-6">
+                                    {/* File Upload */}
+                                    <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-blue-50 transition-colors cursor-pointer relative"
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onDrop={handleDrop}
+                                    >
+                                        <input type="file" multiple className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleFileSelect} />
+                                        <Icons.Upload className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                                        <p className="text-sm text-slate-600 font-medium">レポートファイル (Excel/CSV/PDF)</p>
+                                        <p className="text-xs text-slate-400 mt-1">ドラッグ＆ドロップ または クリック</p>
+                                        <p className="text-xs text-blue-500 font-bold mt-2">※「今月」と「先月」など、複数のファイルをアップロードすると自動比較します</p>
+                                    </div>
+                                    
+                                    {files.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {files.map((f, i) => (
+                                                <span key={i} className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1 rounded-full flex items-center gap-2">
+                                                    <Icons.FileText className="w-3 h-3" />
+                                                    {f.name}
+                                                    <button onClick={() => removeFile(i)} className="text-blue-400 hover:text-red-500 rounded-full p-0.5 hover:bg-red-50"><Icons.Trash2 className="w-3 h-3" /></button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Mode Selection */}
+                                    <div className="space-y-2">
+                                        <p className="text-sm font-bold text-slate-700">分析モード選択</p>
+                                        <div className="flex flex-wrap gap-4">
+                                            <label className={`flex items-center gap-2 cursor-pointer p-3 rounded-lg border transition-all ${mode === 'general_cv' ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                                <input type="radio" name="mode" value="general_cv" checked={mode === 'general_cv'} onChange={e => setMode(e.target.value)} className="text-blue-600" />
+                                                <div>
+                                                    <span className="block text-sm font-bold text-slate-800">他業種 (CVあり)</span>
+                                                    <span className="block text-xs text-slate-500">CV/CPA重視</span>
+                                                </div>
+                                            </label>
+                                            <label className={`flex items-center gap-2 cursor-pointer p-3 rounded-lg border transition-all ${mode === 'general_branding' ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                                <input type="radio" name="mode" value="general_branding" checked={mode === 'general_branding'} onChange={e => setMode(e.target.value)} className="text-blue-600" />
+                                                <div>
+                                                    <span className="block text-sm font-bold text-slate-800">他業種 (CVなし)</span>
+                                                    <span className="block text-xs text-slate-500">IMP/CPC/CTR重視</span>
+                                                </div>
+                                            </label>
+                                            <label className={`flex items-center gap-2 cursor-pointer p-3 rounded-lg border transition-all ${mode === 'pachinko' ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                                <input type="radio" name="mode" value="pachinko" checked={mode === 'pachinko'} onChange={e => setMode(e.target.value)} className="text-blue-600" />
+                                                <div>
+                                                    <span className="block text-sm font-bold text-slate-800">パチンコホール分析</span>
+                                                    <span className="block text-xs text-slate-500">来店・稼働重視</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* Detailed Inputs (Accordion) */}
+                                    <div className="border border-slate-200 rounded-lg">
+                                        <button 
+                                            onClick={() => setIsInputExpanded(!isInputExpanded)}
+                                            className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                                        >
+                                            <span className="font-bold text-sm text-slate-700 flex items-center gap-2">
+                                                <Icons.Settings className="w-4 h-4" /> 詳細入力オプション (任意)
+                                            </span>
+                                            <Icons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isInputExpanded ? 'rotate-180' : ''}`} />
+                                        </button>
+                                        
+                                        {isInputExpanded && (
+                                            <div className="p-4 space-y-4 bg-white rounded-b-lg border-t border-slate-100 animate-fade-in">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">1. 分析対象期間</label>
+                                                        <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="例: 2023年11月" value={inputs.period} onChange={e => handleInputChange('period', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">2. プロモーションのゴール</label>
+                                                        <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="例: 新規会員獲得、イベント認知" value={inputs.goal} onChange={e => handleInputChange('goal', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">3. ターゲット層</label>
+                                                        <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="例: 30-40代男性、近隣住民" value={inputs.target} onChange={e => handleInputChange('target', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">4. 訴求ポイント・強み</label>
+                                                        <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="例: 新台入替、初回無料" value={inputs.strength} onChange={e => handleInputChange('strength', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">5. 競合・市場状況</label>
+                                                        <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="例: 近隣に競合店オープン" value={inputs.competitor} onChange={e => handleInputChange('competitor', e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">6. 現状の課題感</label>
+                                                        <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="例: CPAが高騰している" value={inputs.issues} onChange={e => handleInputChange('issues', e.target.value)} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-500 mb-1">7. その他特記事項 (データ上書き指示など)</label>
+                                                    <textarea className="w-full p-2 border border-slate-300 rounded text-sm h-16 mb-4" placeholder="例: レポート上はCV0件ですが、電話で5件予約が入りました。" value={inputs.notes} onChange={e => handleInputChange('notes', e.target.value)}></textarea>
+                                                </div>
+
+                                                {/* GEO Data Input */}
+                                                <div className="bg-red-50 p-4 rounded-lg border border-red-100 mb-4">
+                                                    <label className="block text-xs font-bold text-red-600 mb-1 flex items-center gap-1">
+                                                        <Icons.MapPin className="w-3 h-3" /> 8. GEO広告・来店計測データ
+                                                    </label>
+                                                    <textarea 
+                                                        className="w-full p-2 border border-red-200 rounded text-sm h-16 focus:ring-red-200 focus:border-red-400" 
+                                                        placeholder="例: 来店数 1,200人, 来店率 0.5%, エリアAからの来店が増加" 
+                                                        value={inputs.geoData} 
+                                                        onChange={e => handleInputChange('geoData', e.target.value)}
+                                                    ></textarea>
+                                                </div>
+
+                                                {/* ROAS/ROI Data Input */}
+                                                <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+                                                    <label className="block text-xs font-bold text-orange-600 mb-1 flex items-center gap-1">
+                                                        <Icons.TrendingUp className="w-3 h-3" /> 9. ROAS/ROI目標・実績
+                                                    </label>
+                                                    <textarea 
+                                                        className="w-full p-2 border border-orange-200 rounded text-sm h-16 focus:ring-orange-200 focus:border-orange-400" 
+                                                        placeholder="例: 目標ROAS 200%に対して実績150%で未達。損益分岐点は180%。" 
+                                                        value={inputs.roasRoi} 
+                                                        onChange={e => handleInputChange('roasRoi', e.target.value)}
+                                                    ></textarea>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </section>
+
+                            {/* 2. Analysis Sections */}
+                            <section className="space-y-4">
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 px-1">
+                                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-sm">2</span>
+                                    詳細分析メニュー
+                                </h3>
+
+                                {ANALYSIS_SECTIONS.map((section) => {
+                                    const isLoading = loadingStates[section.id];
+                                    const isExpanded = expandedSections[section.id];
+                                    const hasResult = !!results[section.id];
+
+                                    return (
+                                        <div key={section.id} id={`section-${section.id}`} className={`bg-white rounded-xl border transition-all duration-200 ${isExpanded ? 'shadow-md border-blue-200 ring-1 ring-blue-100' : 'shadow-sm border-slate-200'}`}>
+                                            {/* Accordion Header */}
+                                            <div 
+                                                className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 rounded-t-xl"
+                                                onClick={() => toggleSection(section.id)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-2 rounded-lg ${hasResult ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                        {Icons[section.icon] ? Icons[section.icon]({className: "w-5 h-5"}) : <Icons.BarChart className="w-5 h-5" />}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-800">{section.title}</h4>
+                                                        <p className="text-xs text-slate-500">{section.description}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); runAnalysis(section.id); }}
+                                                        disabled={isLoading}
+                                                        className={`px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 transition-all ${isLoading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow'}`}
+                                                    >
+                                                        {isLoading ? <Icons.RefreshCw className="w-4 h-4 animate-spin" /> : <Icons.Sparkles className="w-4 h-4" />}
+                                                        {isLoading ? '分析中...' : (hasResult ? '再生成' : '分析開始')}
+                                                    </button>
+                                                    <Icons.ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                </div>
+                                            </div>
+
+                                            {/* Accordion Body */}
+                                            {isExpanded && (
+                                                <div className="border-t border-slate-100 p-4 animate-fade-in bg-slate-50/50 rounded-b-xl">
+                                                    {isLoading ? (
+                                                        <div className="py-12 text-center">
+                                                            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-200 border-t-blue-600 mb-4"></div>
+                                                            <p className="text-slate-500 animate-pulse font-bold">AIがデータを分析しています...</p>
+                                                            <p className="text-xs text-slate-400 mt-2">※ファイルサイズによって30秒～2分以上かかる場合があります</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <label className="text-xs font-bold text-slate-500 uppercase">分析結果</label>
+                                                                <span className="text-xs text-slate-400">自由に編集可能です</span>
+                                                            </div>
+                                                            <textarea
+                                                                className="w-full h-96 p-4 rounded-lg border border-slate-300 text-slate-700 leading-relaxed font-sans text-sm shadow-inner resize-y focus:bg-white transition-colors"
+                                                                value={results[section.id] || ""}
+                                                                onChange={(e) => updateResult(section.id, e.target.value)}
+                                                                placeholder="「分析開始」ボタンを押すと、ここにAIの分析結果と改善提案が表示されます。"
+                                                            ></textarea>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </section>
+                        </div>
+                    </main>
+
+                    {/* --- Settings Modal --- */}
+                    {showSettings && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+                                <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                        <Icons.Settings className="w-5 h-5 text-slate-500" /> 設定
+                                    </h3>
+                                    <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-slate-100 rounded-full transition-colors">
+                                        <Icons.Trash2 className="w-5 h-5 text-slate-400 rotate-45" /> {/* Close Icon substitute */}
+                                    </button>
+                                </div>
+                                <div className="p-6 space-y-5">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-2">使用モデル</label>
+                                        <select 
+                                            value={modelName}
+                                            onChange={(e) => setModelName(e.target.value)}
+                                            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                        >
+                                            <option value="gemini-2.5-flash">gemini-2.5-flash (高速分析用)</option>
+                                            <option value="gemini-2.5-pro">gemini-2.5-pro (高精度分析用)</option>
+                                        </select>
+                                        <p className="text-xs text-slate-500 mt-2">※通常はFlashモデルで十分な分析が可能。</p>
+                                    </div>
+                                    <button 
+                                        onClick={saveSettings}
+                                        className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-transform active:scale-95"
+                                    >
+                                        設定を保存
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
