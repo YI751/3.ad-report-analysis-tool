@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WEB広告レポート分析・改善施策提案ツール</title>
+    <title>WEB広告レポート分析・改善施策提案ツール Ver1.0</title>
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -66,7 +66,6 @@
 
         // ==========================================
         //  CONFIG: Supabase Settings
-        //  (From index2.html)
         // ==========================================
         const SUPABASE_URL = 'https://zflsgqzuvcnahxmthjpk.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmbHNncXp1dmNuYWh4bXRoanBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1MTE1NzMsImV4cCI6MjA2NzA4NzU3M30.P1dLtsIorP7PoKkL97UCJ3UmIm_OQFu0NPJNmCOZV1I';
@@ -236,7 +235,9 @@
                                 <label className="block text-sm font-bold text-slate-700 mb-1">メールアドレス</label>
                                 <input 
                                     type="email" 
-                                    required 
+                                    name="email"
+                                    required
+                                    autoComplete="username" 
                                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -246,8 +247,10 @@
                                 <label className="block text-sm font-bold text-slate-700 mb-1">パスワード</label>
                                 <input 
                                     type="password" 
+                                    name="password"
                                     required 
                                     minLength="6"
+                                    autoComplete="current-password"
                                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -406,22 +409,69 @@
 
                     if (!rawData) throw new Error("ファイルの内容を読み取れませんでした。ファイルを再アップロードしてください。");
 
-                    // Build Prompts (Same logic as Ver 7.5)
+                    // =================================================================================
+                    //  PROMPT ENGINEERING (REFINED: HALLUCINATION FIX & FORMATTING)
+                    // =================================================================================
+                    
+                    // 共通の構造化指示
+                    const STRUCTURED_INSTRUCTION = `
+【最重要：出力フォーマットの厳守】
+すべての回答は必ず以下の2つの見出しで構成し、それぞれの内容を記述してください。
+
+【現状分析】
+- 挨拶は一切不要です。即座に数値の報告から始めてください。
+- 全体の数値（Imp, Click, CTR, CPC, Cost, CV, CPAなど）を報告してください。
+- 良い点（成果が出ている箇所）と課題点（課題・ボトルネック）の両方を、具体的な数値と共に指摘してください。
+- 比較対象がある場合は、その変化要因を論理的に解説してください。
+
+【改善施策】
+- 【現状分析】で挙げた課題を解決するため、または成果をさらに伸ばすための具体的な施策を3つ程度提案してください。
+- 提案は「〇〇すべきです。なぜなら〜だからです」という論理構成で記述してください。
+- 精神論ではなく、予算配分の変更、キーワードの追加・停止、クリエイティブの修正など、具体的なアクションを提示してください。
+`;
+
                     let systemPrompt = "";
+                    let specificInstruction = "";
+                    const sectionConfig = ANALYSIS_SECTIONS.find(s => s.id === sectionId);
+
+                    // --- NEW: HALLUCINATION CHECK ---
+                    // ファイルが1つだけの場合は比較表現を禁止する
+                    const isSingleFile = files.length === 1;
+                    const antiHallucinationPrompt = isSingleFile 
+                        ? `\n\n【重要：ハルシネーション（虚偽）対策・比較表現の禁止】\n現在、アップロードされているファイルは1つのみです。ファイル内に明確な「過去データ」が含まれていない限り、「前月比」「昨年比」「前月と比較して大幅に増加」といった比較表現は**絶対に使用しないでください**。比較対象がない場合は、淡々と「当月の数値事実」のみを報告してください。嘘の比較は信頼を損ないます。`
+                        : ``;
+
+                    // --- NEW: FORMATTING INSTRUCTION ---
+                    const formattingPrompt = `
+\n【文章の可読性向上・改行ルール（厳守）】
+1. **「。」（句点）の直後で必ず改行してください。** 句点の後ろに続けて文章を書くことは禁止です。
+2. **無駄な空行は削除してください。** 段落間に空行を入れすぎず、詰めて表示してください。ただし、読みやすさを損なわない範囲でお願いします。
+3. 1文が長くなりすぎないよう、40文字〜50文字程度を目安に句読点で区切るか、文章を分割してください。横に長い文章は読みづらいため避けてください。
+`;
+
+                    // モード別システムプロンプトの定義
                     if (mode === 'general_cv') {
-                        systemPrompt = `あなたはWEB広告運用のプロフェッショナルコンサルタントです。\nクライアントの売上拡大・利益最大化を目的とし、数値に基づいた論理的な分析を行ってください。\n【評価基準】: CPA（獲得単価）、ROAS（広告費用対効果）、CVR（コンバージョン率）、CV（コンバージョン）を最重要指標とします。\n【トーン＆マナー】: \n- クライアントへの「公式な分析レポート」として適切な、丁寧かつ論理的な「です・ます調」を使用してください。\n- メールのような挨拶（拝啓、お世話になっております等）は一切禁止です。\n- 感情的な表現は避け、数値と事実に基づいたプロフェッショナルな文体を維持してください。`;
+                        systemPrompt = `あなたは論理的かつ成果志向のWEB広告アナリストです。\n事実と数値に基づき、クライアントの成果を正確に報告してください。\n${STRUCTURED_INSTRUCTION}\n【評価基準】: CPA、CV数などのKPI達成状況を客観的に評価し、成果が出ている要因を論理的に解説してください。`;
                     } else if (mode === 'general_branding') {
-                        systemPrompt = `あなたはWEB広告運用のプロフェッショナルコンサルタントです。\nクライアントの認知拡大・ブランドリフトを目的とし、リーチと誘導効率を分析してください。\n【評価基準】: CTR（クリック率）、CPC（クリック単価）、インプレッション数、CPMを重要指標とします。CVは参考程度とします。\n【トーン＆マナー】: \n- クライアントへの「公式な分析レポート」として適切な、丁寧かつ論理的な「です・ます調」を使用してください。\n- メールのような挨拶（拝啓、お世話になっております等）は一切禁止です。\n- ポジティブな要素を見つけ出し、さらなる拡大策を提案するスタイルで記述してください。`;
+                        systemPrompt = `あなたは企業のブランド戦略を支援するデータアナリストです。\n認知拡大の進捗状況を、数値（CTR, Imp, CPC）を根拠に報告してください。\n${STRUCTURED_INSTRUCTION}\n【評価基準】: ブランド認知の拡大状況を評価し、効率的なリーチ獲得ができている点を中心に報告してください。`;
                     } else if (mode === 'pachinko') {
-                        systemPrompt = `あなたはパチンコホール集客の専門WEBマーケターです。\n店舗の「稼働率向上」「来店客数増加」を目的とした分析を行ってください。 CTR（クリック率）、CPC（クリック単価）、インプレッション数、CPMについても可能な限り分析し、改善策を提案してください。\n【重要・用語制限】: \n- 「CV（コンバージョン）」という言葉は絶対に使用せず、「来店」「稼働」「アクション」「客数」などに言い換えてください。\n- 「CPA」は「来店獲得単価」や「アクション単価」と言い換えてください。\n【評価基準】: エリア商圏内の競合との比較、新台入替やイベント日（特定日）の反響を重視してください。\n【トーン＆マナー】: \n- クライアントへの「公式な分析レポート」として適切な、丁寧かつ論理的な「です・ます調」を使用してください。\n- メールのような挨拶（拝啓、お世話になっております等）は一切禁止です。\n- 現場の店長にも伝わる、分かりやすく熱意のある表現を心がけてください。`;
+                        systemPrompt = `あなたはパチンコホールの集客状況を分析する専門マーケターです。\n店舗責任者に対し、集客施策の成果を端的に報告するレポートを作成してください。\n${STRUCTURED_INSTRUCTION}\n【重要・用語制限】: \n- 「CV」→「来店」「稼働」「アクション」\n- 「CPA」→「来店獲得単価」\n【評価基準】: 来店・稼働に繋がっているポジティブな要因（新台、特定日、機種示唆など）を特定し、それが数値にどう表れているかを報告してください。`;
+                    }
+
+                    // セクション別指示の定義
+                    if (sectionId === 'summary') {
+                        specificInstruction = `【全体サマリーの分析】\n広告全体のパフォーマンス（Imp, Click, CTR, CPC, Cost, CV, CPA）を網羅的に分析してください。\n特に「予算配分の最適化」や「機会損失の解消」という観点から分析を行い、最も効果的な媒体（検索、ディスプレイ、動画など）とそうでないものを明確に区別してください。`;
+                    } else if (sectionId === 'comparisonMoM') {
+                        specificInstruction = `【期間比較・トレンド分析】\n前月などの過去データと比較し、数値の変動（良化した点、悪化した点）を抽出してください。\nその変動が「季節要因」なのか「施策の影響」なのかを推測し記述してください。`;
+                    } else if (sectionId === 'comparisonYoY') {
+                        specificInstruction = `【前年同月比分析】\n昨対比での成長率や、市場トレンドの変化を分析してください。`;
+                    } else {
+                        specificInstruction = `【${sectionConfig.title}の分析】\nこの項目における現状の数値を詳細に分析し、成功要因と阻害要因を特定してください。\n改善施策では、この項目特有の具体的なチューニング案（例：除外設定、入札調整、ターゲティング変更など）を提示してください。`;
                     }
 
                     const userContext = `
-【最重要：分析の前提データ（データ修正・上書き指示）】
-以下の「詳細入力オプション」に記載された情報は、アップロードされたレポートファイルの数値よりも**優先度が高い**情報です。
-特に「その他特記事項」や「GEOデータ」、「ROAS/ROI目標」に具体的な数値が記述されている場合は、
-**レポートファイルの数値を無視し、入力された数値を「正」として分析を行ってください。**
-
+【分析の前提データ】
+以下の情報は、アップロードされたデータよりも優先してください。
 1. 分析対象期間: ${inputs.period || "レポートデータの日付に従う"}
 2. プロモーションのゴール: ${inputs.goal || "特になし"}
 3.ターゲット層: ${inputs.target || "特になし"}
@@ -429,48 +479,24 @@
 5. 競合・市場状況: ${inputs.competitor || "特になし"}
 6. 現状の課題感: ${inputs.issues || "特になし"}
 7. その他特記事項: ${inputs.notes || "特になし"}
-8. GEO広告・来店計測データ: ${inputs.geoData || "特になし（※ファイル内に来店データがある場合はそちらを優先して分析してください）"}
-9. ROAS/ROI目標・実績: ${inputs.roasRoi || "特になし（※入力がある場合は、この目標値に対する達成度を最優先で評価してください）"}
+8. GEO広告・来店計測データ: ${inputs.geoData || "特になし"}
+9. ROAS/ROI目標・実績: ${inputs.roasRoi || "特になし"}
 `;
-
-                    const sectionConfig = ANALYSIS_SECTIONS.find(s => s.id === sectionId);
-                    
-                    let specificInstruction = "";
-                    if (sectionId === 'comparisonMoM') {
-                        specificInstruction = `【重要：期間比較・トレンド分析モード】\n複数の期間ファイルがある場合、最新を当月、それ以外を過去として比較してください。\n「なぜ変化したのか（要因仮説）」と「どう対策すべきか（アクション）」を深く分析してください。`;
-                    } else if (sectionId === 'comparisonYoY') {
-                        specificInstruction = `【重要：前年比較モード】\n前年データと比較し、市場環境の変化や季節要因を分析してください。`;
-                    } else {
-                        let baseInstruction = `【最重要：最新データ一点集中】\n本セクション「${sectionConfig.title}」では、**「最新の状況」のみ**を分析してください。過去との比較はノイズとなるため無視してください。`;
-                        if (sectionId === 'summary') {
-                            baseInstruction += `
-\n【重要：全体サマリーにおける深掘り分析の徹底】
-単に数値を羅列するだけの「浅いレポート」は禁止します。プロのコンサルタントとして、以下の視点で深く考察してください。
-1. **8大指標の網羅と評価**: Imp, Click, CTR, CPC, Cost, CV, CVR, CPA, ROASの数値を提示し、それぞれの良し悪しを判定してください。
-2. **ボトルネックの特定**: 「CPA悪化の主因はCPCの高騰ではなく、CVRの低下にある」といったように、課題の核心を特定してください。
-3. **KPI間の相関分析**: 「クリック率は高いがCVRが低い（＝LPに問題あり？）」など、指標間の関係性から仮説を導き出してください。
-4. **目標との乖離**: 詳細入力にROAS/ROI目標がある場合は、その達成可否と、未達ならその原因を最優先で論じてください。
-`;
-                        }
-                        if (sectionId !== 'summary') {
-                            baseInstruction += `\nもし入力データにROAS/ROIの目標値がある場合は、本セクションの分析においても、その目標達成に貢献しているかという視点を盛り込んでください。`;
-                        }
-                        specificInstruction = baseInstruction;
-                    }
 
                     const prompt = `
 ${systemPrompt}
+${antiHallucinationPrompt}
+${formattingPrompt}
 ${userContext}
-【今回のミッション】
-あなたは今、**【${sectionConfig.title}】** の専任担当者です。
-渡されたレポートデータの中から、**【${sectionConfig.title}】** に関連する数値や情報「のみ」を抽出し、深い分析を行ってください。
+【今回のタスク】
+あなたは今、**【${sectionConfig.title}】** の分析レポートを作成します。
+渡されたデータから情報を抽出し、プロフェッショナルな報告書を作成してください。
 ${specificInstruction}
-【最重要: 出力形式の厳守事項】
+【出力形式の厳守事項】
 1. Markdown記号禁止（**太字**や#見出しなどは使用しない）。
-2. 「。」で必ず改行。1段落は3行以内。
-3. 箇条書きのリスト間は空行を入れず詰める。
-4. 文体は「です・ます調」。挨拶不要。
-5. 構成：【現状分析】と【改善施策】の2部構成。
+2. 「。」で必ず改行。
+3. 文体は「です・ます調」。挨拶不要。
+4. **必ず【現状分析】と【改善施策】の2つの見出しを使って構成してください。**
 
 【レポートデータ】
 ${rawData}
@@ -576,7 +602,6 @@ ${rawData}
                     <main className="flex-1 flex flex-col relative overflow-hidden">
                         <header className="bg-white border-b border-slate-200 p-4 flex justify-between items-center shadow-sm z-10">
                             <div className="flex items-center gap-4">
-                                <h2 className="text-xl font-bold text-slate-800">レポート分析</h2>
                                 <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">Model: {modelName}</span>
                             </div>
                             <div className="flex gap-2">
@@ -608,7 +633,7 @@ ${rawData}
                                         <Icons.Upload className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                                         <p className="text-sm text-slate-600 font-medium">レポートファイル (Excel/CSV/PDF)</p>
                                         <p className="text-xs text-slate-400 mt-1">ドラッグ＆ドロップ または クリック</p>
-                                        <p className="text-xs text-blue-500 font-bold mt-2">※「今月」と「先月」など、複数のファイルをアップロードすると自動比較します</p>
+                                        <p className="text-xs text-blue-500 font-bold mt-2">※「今月」と「先月」など、複数のファイルをアップロードすると比較分析します</p>
                                     </div>
                                     
                                     {files.length > 0 && (
@@ -843,6 +868,4 @@ ${rawData}
         root.render(<App />);
     </script>
 </body>
-
-
 </html>
